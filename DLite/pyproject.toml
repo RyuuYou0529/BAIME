@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "{{ project_name | default('DLite') }}"
+version = "0.1.0"
+description = "{{ project_description | default('A new awesome project.') }}"
+authors = [
+  { name = "{{ author_name | default('Your Name') }}", email = "{{ author_email | default('your@email.com') }}" },
+]
+license = { text = "{{ license | default('MIT') }}" }
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+
+dependencies = [
+    "numpy",
+    "torch",
+    "torchvision",
+    "tqdm",
+    "ray[default]",
+    "pyyaml"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["lib"]

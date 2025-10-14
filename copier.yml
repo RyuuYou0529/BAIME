@@ -1,0 +1,44 @@
+# Questions
+project_name:
+  type: str
+  help: What is the name of your project?
+  default: DLite-project
+
+project_description:
+  type: str
+  help: A brief description of your project.
+  default: "A new awesome project."
+
+author_name:
+  type: str
+  help: What is your full name?
+
+author_email:
+  type: str
+  help: What is your email address?
+
+license:
+  type: str
+  help: Which license do you want for your project?
+  choices:
+    - MIT
+    - Apache-2.0
+    - BSD-3-Clause
+    - GPL-3.0-or-later
+    - Proprietary
+  default: MIT
+
+_subdirectory: DLite
+
+# Files to exclude from the final project
+_exclude:
+  - ".git/"
+  - "__pycache__/"
+  - ".vscode/"
+  - ".idea/"
+  - ".eggs/"
+  - "*.egg-info/"
+  - "*.pyc"
+  - ".DS_Store"
+  - "_test_*"
+  - "copier.yaml"

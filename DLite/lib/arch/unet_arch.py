@@ -1,0 +1,129 @@
+import torch
+import torch.nn as nn
+import functools
+
+from .base_arch import BaseModel
+from ..core.register import ARCH_REGISTER
+
+def get_norm_layer(norm_type:str, dim=2):
+    if dim == 2:
+        BatchNorm = nn.BatchNorm2d
+        InstanceNorm = nn.InstanceNorm2d
+    elif dim == 3:
+        BatchNorm = nn.BatchNorm3d
+        InstanceNorm = nn.InstanceNorm3d
+    else:
+        raise Exception('Invalid dim.')
+
+    if norm_type == 'batch':
+        norm_layer = functools.partial(BatchNorm, affine=True, track_running_stats=True)
+    elif norm_type == 'instance':
+        norm_layer = functools.partial(InstanceNorm, affine=False, track_running_stats=False)
+    else:
+        raise NotImplementedError('normalization layer [%s] is not found' % norm_type)
+    return norm_layer
+
+class ResConv(nn.Module):
+    def __init__(self, in_channels, out_channels, *, norm_type=None, dim=3):
+        super(ResConv, self).__init__()
+
+        if dim == 2:
+            Conv = nn.Conv2d
+        elif dim == 3:
+            Conv = nn.Conv3d
+        else:
+            raise Exception('Invalid dim.')
+        
+        if norm_type is not None:
+            norm_layer=get_norm_layer(norm_type, dim=dim)
+        use_bias = True if norm_type=='instance' else False
+
+        conv_layers = []
+        conv_layers.append(Conv(in_channels, out_channels, kernel_size=3, padding=1, bias=use_bias))
+        conv_layers.append(norm_layer(out_channels)) if norm_type else None
+        conv_layers.append(nn.ReLU())
+        conv_layers.append(Conv(out_channels, out_channels, kernel_size=3, padding=1, bias=use_bias))
+        conv_layers.append(norm_layer(out_channels)) if norm_type else None
+        self.conv = nn.Sequential(*conv_layers)
+
+        if in_channels != out_channels:
+            self.conv1x1 = Conv(in_channels, out_channels, kernel_size=1, bias=use_bias)
+        else:
+            self.conv1x1 = None
+        self.final_act = nn.ReLU()
+
+    def forward(self, x):
+        input = x
+        x = self.conv(x)
+        if self.conv1x1:
+            input = self.conv1x1(input)
+        x = x + input
+        x = self.final_act(x)
+        return x
+
+
+@ARCH_REGISTER.register('UNet')
+class UNet(BaseModel):
+    def __init__(self, in_channels=1, out_channels=1, features=[64, 128, 256], *, norm_type='batch', dim=3):
+        super(UNet, self).__init__()
+        self.downs = nn.ModuleList()
+        self.ups = nn.ModuleList()
+
+        if dim == 2:
+            Conv = nn.Conv2d
+            upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+            self.MaxPool = nn.MaxPool2d
+        elif dim == 3:
+            Conv = nn.Conv3d
+            upsample = nn.Upsample(scale_factor=2, mode='trilinear', align_corners=True)
+            self.MaxPool = nn.MaxPool3d
+        else:
+            raise Exception('Invalid dim.')
+            
+        # Encoder
+        for feature in features:
+            self.downs.append(ResConv(in_channels, feature, norm_type=norm_type, dim=dim))
+            in_channels = feature
+
+        # Decoder
+        for feature in reversed(features[:-1]):
+            self.ups.append(
+                nn.Sequential(
+                    upsample, 
+                    Conv(feature*2, feature, kernel_size=1, stride=1),
+                    nn.ReLU()
+                )
+            )
+            self.ups.append(ResConv(feature*2, feature, norm_type=norm_type, dim=dim))
+
+        self.final_conv = Conv(features[0], out_channels, kernel_size=1)
+    
+    @classmethod
+    def init_from_args(cls, args):
+        instance = cls(
+            in_channels=args.in_channels, 
+            out_channels=args.out_channels, 
+            features=args.features, 
+            norm_type=args.norm_type, 
+            dim=args.dim
+        )
+        return instance
+
+    def forward(self, x):
+        input = x
+        skip_connections = []
+        for i, down in enumerate(self.downs):
+            x = down(x)
+            skip_connections.append(x)
+            if i != len(self.downs)-1:
+                x = self.MaxPool(kernel_size=2)(x)
+
+        skip_connections = skip_connections[::-1]
+        for i in range(0, len(self.ups), 2):
+            x = self.ups[i](x)
+            skip = skip_connections[i//2+1]
+            x = torch.cat((skip, x), dim=1)
+            x = self.ups[i+1](x)
+        x = self.final_conv(x)
+        x = x + input
+        return x
