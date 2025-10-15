@@ -1,9 +1,7 @@
 # === GENERAL ===
 model: DLiteExample
 reset: true
-cfg: null
 out_path: /home/ryuuyou/E5/project/DLite/out
-# out_path: /share/home/liuy/project/DLite/out
 
 # === RAY DISTRIBUTED ===
 ray_address: null
