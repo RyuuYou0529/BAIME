@@ -79,7 +79,8 @@ python -m lib.train -cfg ${CONFIG_FILE_PATH}
 The corresponding results are formatted as follows:
 
 ```bash
-- ${trial_name}
+${trial_name}/
+|
 |--- checkpoints/ #model weights
 |   |--- Epoch_0100/
 |   |--- ${trial_name}_Epoch0100.pt
@@ -96,7 +97,7 @@ The corresponding results are formatted as follows:
 |--- tensorboard/ #tensorboard log file
 |   |--- events.out.tfevents.xxxxxx
 |
-|--- slurm # slurm related files
+|--- slurm/ # slurm related files
 |   |--- ${trial_on_slurm_name}_${timestamp}.sh
 |   |--- ${trial_on_slurm_name}_${timestamp}_out.log
 |   |--- ${trial_on_slurm_name}_${timestamp}_err.log

@@ -7,21 +7,21 @@ name = "DLite"
 version = "0.1.0"
 description = "Deep Learning toolkit/template/engine."
 authors = [
-  # Add your name and email here
   { name = "RyuuYou", email = "ryuuyou0529@gmail.com" },
 ]
 license = { text = "BSD-3-Clause" }
 readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [
-    "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3",
 ]
 
 dependencies = [
-    "numpy",
-    "torch",
-    "torchvision",
-    "tqdm",
-    "ray[default]",
-    "pyyaml"
+  "numpy",
+  "torch",
+  "torchvision",
+  "tqdm",
+  "ray[data,train,tune,serve]",
+  "pyyaml"
+  "tensorboard",
 ]
