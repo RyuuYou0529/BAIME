@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "DLite"
+name = "BAIME"
 version = "0.1.0"
-description = "Deep Learning toolkit/template/engine."
+description = "Build AI Models with Ease."
 authors = [
   { name = "RyuuYou", email = "ryuuyou0529@gmail.com" },
 ]

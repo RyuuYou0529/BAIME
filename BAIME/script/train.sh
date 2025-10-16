@@ -1,4 +1,4 @@
-CONFIG_NAME=DLite.yaml
+CONFIG_NAME=BAIME.yaml
 
 SCRIPT_DIR=$(dirname $(realpath $0))
 WORKSPACE=$(realpath $SCRIPT_DIR/../)

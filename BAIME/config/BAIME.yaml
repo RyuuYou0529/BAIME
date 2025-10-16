@@ -1,7 +1,7 @@
 # === GENERAL ===
-model: DLiteExample
+model: BAIME_Example
 reset: true
-out_path: /home/ryuuyou/E5/project/DLite/out
+out_path: /home/ryuuyou/E5/project/BAIME/out
 
 # === RAY DISTRIBUTED ===
 ray_address: null

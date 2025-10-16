@@ -16,7 +16,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Deep Learning with Ray')
 
     # === GENERAL === #
-    parser.add_argument('-model', type=str, default="DLiteExample",
+    parser.add_argument('-model', type=str, default="BAIME_Example",
                         help='Model/Task/Trial name')
     parser.add_argument('-reset', action='store_true',
                         help='Reset saved model logs and weights')

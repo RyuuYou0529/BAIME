@@ -1,4 +1,4 @@
-# DLite
+# <img src="assets/baime_logo.png" width="30"> BAIME: Build AI Models with Ease.
 
 [![Copier](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/copier-org/copier/master/img/badge/badge-black.json)](https://github.com/copier-org/copier)
 
@@ -8,12 +8,12 @@ A Concise Blueprint for Deep Learing Project
 
 ### 1. Scaling
 
-DLite levrages **PyTorch** and **Ray** frameworks to facilitate the scaling of AI and python applications. 
+BAIME levrages **PyTorch** and **Ray** frameworks to facilitate the scaling of AI and python applications. 
 
-Furthermore, DLite offers lanuch wrapper for **Slurm** system.
+Furthermore, BAIME offers lanuch wrapper for **Slurm** system.
 
 ### 2. Guidance
-DLite guides users in structuring their deep learning projects into serval modules, primarily located within **lib/** directory:
+BAIME guides users in structuring their deep learning projects into serval modules, primarily located within **lib/** directory:
 
 - **arch/**: Contains model architecture definitions.
 - **dataset/**: Manages data reading and processing.
@@ -24,15 +24,15 @@ DLite guides users in structuring their deep learning projects into serval modul
 - **inferencer/**: Contains the logic for the inference process.
 - **utils/**: Provides various helper functions.
 
-DLite includes example implementations for these modules and offers a registration mechanism to streamline their invocation.
+BAIME includes example implementations for these modules and offers a registration mechanism to streamline their invocation.
 
 ### 3. Trial Management
 
-DLite facilitates the management of each experiment/trial/task/job through its configuration system. Each trial's parameters are defined within a YAML file.
+BAIME facilitates the management of each experiment/trial/task/job through its configuration system. Each trial's parameters are defined within a YAML file.
 
 ```yaml
 # === GENERAL ===
-model: DLiteExample # your trial/experiment/task name
+model: BAIME_Example # your trial/experiment/task name
 out_path: ${your_output_path} # absolute path
 reset: true # whether clear trial folder or not
 
@@ -108,7 +108,7 @@ ${trial_name}/
 ## Usage
 
 ```bash
-copier copy --trust https://github.com/RyuuYou0529/DLite ${your_project_workspace}
+copier copy --trust https://github.com/RyuuYou0529/BAIME ${your_project_workspace}
 ```
 
 ## Acknowledgments
