@@ -21,7 +21,6 @@ dependencies = [
   "torch",
   "torchvision",
   "tqdm",
-  "ray[data,train,tune,serve]",
   "pyyaml",
   "tensorboard",
 ]

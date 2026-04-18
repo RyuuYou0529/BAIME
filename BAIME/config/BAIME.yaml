@@ -3,11 +3,9 @@ model: BAIME_Example
 reset: true
 out_path: /home/ryuuyou/E5/project/BAIME/out
 
-# === RAY DISTRIBUTED ===
-ray_address: null
-num_workers: 1
-gpus_per_worker: 1.0
-cpus_per_worker: 2
+# === RUNTIME ===
+runtime: standalone
+devices: [0]
 
 # === Trainer ===
 trainer: BaseTrainer

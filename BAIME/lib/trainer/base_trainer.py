@@ -1,8 +1,8 @@
 import sys
 import os
 import torch
-from torch.utils.data import DataLoader
-from ray import train as ray_train
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data import DataLoader, DistributedSampler
 from tqdm import tqdm
 import glob
 
@@ -21,25 +21,21 @@ class BaseTrainer(object):
     def __init__(self, args=None):
         super(BaseTrainer, self).__init__()
 
-    def __init_attributes__(self, args=None):
+    def __init_attributes__(self, args=None, ctx=None):
         if not args:
             return
         self.args = args
-    
-    def __call__(self, config:dict):
-        self.train_func(config)
-    
+        self.ctx = ctx
+
     def __tee__(self):
-        worker_rank = ray_train.get_context().get_world_rank()
-        stdout_log_path = os.path.join(self.args.out_log_path, f'worker_{worker_rank}.out')
-        stderr_log_path = os.path.join(self.args.out_log_path, f'worker_{worker_rank}.err')
+        stdout_log_path = os.path.join(self.args.out_log_path, f'worker_{self.ctx.rank}.out')
+        stderr_log_path = os.path.join(self.args.out_log_path, f'worker_{self.ctx.rank}.err')
         sys.stdout = Tee(stdout_log_path, keep_stdout=True, keep_stderr=False)
         sys.stderr = Tee(stderr_log_path, keep_stdout=False, keep_stderr=True)
 
-    def train_func(self, config:dict):
-        args = config['args']
+    def train_func(self, args, ctx):
         # === Initialize Attributes === #
-        self.__init_attributes__(args)
+        self.__init_attributes__(args, ctx)
         # === Prepare Tee for logging === #
         self.__tee__()
 
@@ -66,34 +62,47 @@ class BaseTrainer(object):
     
     def init_modules(self, CKPT=None):
         # === Prepare TensorBoard Writer === #
-        if ray_train.get_context().get_world_rank() == 0:
+        if self.ctx.is_main:
             self.TBWriter = TBWriter(self.args.out_tb_path, self.args)
 
         # === Prepare Training DataLoader === #
         train_dataset = get_dataset(self.args, mode='train')
-        train_dataloader = DataLoader(
-            train_dataset, 
+        train_sampler = None
+        shuffle = self.args.shuffle
+        if self.ctx.world_size > 1:
+            train_sampler = DistributedSampler(train_dataset, num_replicas=self.ctx.world_size, rank=self.ctx.rank)
+            shuffle = False  # sampler handles shuffling
+        self.TrainDataloader = DataLoader(
+            train_dataset,
             batch_size=self.args.batch_size_per_worker,
-            shuffle=self.args.shuffle
+            shuffle=shuffle,
+            sampler=train_sampler,
+            num_workers=self.args.workers,
         )
-        self.TrainDataloader = ray_train.torch.prepare_data_loader(train_dataloader)
 
         # === Prepare Validation DataLoader === #
         if self.args.val_data_path:
             val_dataset = get_dataset(self.args, mode='val')
-            val_dataloader = DataLoader(
+            val_sampler = None
+            if self.ctx.world_size > 1:
+                val_sampler = DistributedSampler(val_dataset, num_replicas=self.ctx.world_size, rank=self.ctx.rank, shuffle=False)
+            self.ValDataloader = DataLoader(
                 val_dataset,
                 batch_size=self.args.batch_size_per_worker,
-                shuffle=False
+                shuffle=False,
+                sampler=val_sampler,
+                num_workers=self.args.workers,
             )
-            self.ValDataloader = ray_train.torch.prepare_data_loader(val_dataloader)
 
         # === Prepare Model === #
         model = get_model(self.args)
         if CKPT and 'model' in CKPT:
             model_state = CKPT['model']
             model.load_state_dict(model_state)
-        self.MODEL = ray_train.torch.prepare_model(model)
+        model = model.to(self.ctx.device)
+        if self.ctx.world_size > 1:
+            model = DDP(model, device_ids=[self.ctx.device])
+        self.MODEL = model
 
         # === Prepare Loss === #
         self.LOSS = get_loss(self.args)
@@ -111,15 +120,15 @@ class BaseTrainer(object):
         self.start_epoch = CKPT.get('epoch', 0) if CKPT else 0
     
     def cal_global_iter(self, epoch, batch_idx):
-        num_workers = ray_train.get_context().get_world_size()
-        workd_rank = ray_train.get_context().get_world_rank()
-        global_iter = epoch*len(self.TrainDataloader)*num_workers + batch_idx*num_workers + workd_rank
+        num_workers = self.ctx.world_size
+        worker_rank = self.ctx.rank
+        global_iter = epoch*len(self.TrainDataloader)*num_workers + batch_idx*num_workers + worker_rank
         local_iter = epoch*len(self.TrainDataloader) + batch_idx
         return global_iter, local_iter
 
     def train_one_epoch(self, epoch):
         # === Set epoch for distributed sampler === #
-        if ray_train.get_context().get_world_size() > 1:
+        if self.ctx.world_size > 1:
             self.TrainDataloader.sampler.set_epoch(epoch)
         
         # === Training === #
@@ -127,6 +136,7 @@ class BaseTrainer(object):
         total_loss = 0.0
         with tqdm(total=len(self.TrainDataloader), desc=f"TrainEpoch[{epoch+1}/{self.args.epochs}]", leave=True) as pbar:
             for batch_idx, (data, label) in enumerate(self.TrainDataloader):
+                data, label = data.to(self.ctx.device), label.to(self.ctx.device)
                 # === Calculate global iteration === #
                 global_iter, local_iter = self.cal_global_iter(epoch, batch_idx)
                 # === Update progress bar === #
@@ -149,14 +159,14 @@ class BaseTrainer(object):
                 total_loss += loss.item()
 
                 # === Log Train Loss & Images & Learning Rate === #
-                if ray_train.get_context().get_world_rank() == 0:
+                if self.ctx.is_main:
                     if loss_logger:
                         self.record_loss_logs(loss_logger, global_iter, prefix='Batch-Wise Train Loss')
                     if image_logger and (global_iter % 50 == 0):
                         self.record_image_logs(image_logger, global_iter, prefix='Batch-Wise Predictions')
                     self.record_learning_rate(current_lr, global_iter, prefix='Scheduler')
             avg_train_loss = total_loss / len(self.TrainDataloader)
-            if ray_train.get_context().get_world_rank() == 0:
+            if self.ctx.is_main:
                 self.record_loss_logs({'total': avg_train_loss}, epoch, prefix='Epoch-Wise Train Loss')
         return avg_train_loss
     
@@ -167,13 +177,14 @@ class BaseTrainer(object):
         val_loss, num_total = 0.0, 0
         with torch.no_grad():
             for batch_idx, (data, label) in tqdm(enumerate(self.ValDataloader), desc=f'ValEpoch[{epoch+1}/{self.args.epochs}]'):
+                data, label = data.to(self.ctx.device), label.to(self.ctx.device)
                 pred = self.MODEL(data)
                 loss, loss_logger= self.LOSS(pred, label)
                 val_loss += loss.item()
                 num_total += label.size(0)
         
         avg_val_loss = val_loss / len(self.ValDataloader)
-        if ray_train.get_context().get_world_rank() == 0:
+        if self.ctx.is_main:
             self.record_loss_logs({'total': avg_val_loss}, epoch, prefix='Epoch-Wise Validation Loss')
         return avg_val_loss
 
@@ -215,7 +226,7 @@ class BaseTrainer(object):
             
     def save_checkpoint(self, epoch, metrics):
         if (epoch+1)%self.args.save_every == 0 or (epoch+1) == self.args.epochs:
-            if ray_train.get_context().get_world_rank() == 0:
+            if self.ctx.is_main:
                 ckpt_dir = os.path.join(self.args.out_ckpt_path, f'Epoch_{str(epoch+1).zfill(4)}/')
                 checkdir(ckpt_dir, reset=False)
                 ckpt_path = os.path.join(ckpt_dir, f'{self.args.model}_Epoch{str(epoch+1).zfill(4)}.pt')
@@ -227,9 +238,3 @@ class BaseTrainer(object):
                     "args": self.args
                 }
                 torch.save(CKPT, ckpt_path)
-                ray_train.report(
-                    metrics=metrics,
-                    checkpoint=ray_train.Checkpoint(ckpt_dir)
-                )
-            else:
-                ray_train.report(metrics=metrics)
