@@ -2,6 +2,8 @@ import os
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data import DataLoader, DistributedSampler
 
 from .base_runtime import BaseRuntime, RuntimeContext
 from ..core.register import RUNTIME_REGISTER
@@ -23,7 +25,6 @@ class DDPRuntime(BaseRuntime):
         world_size = len(devices)
 
         os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(str(d) for d in devices)
-        # After setting CUDA_VISIBLE_DEVICES, local ranks are 0..N-1
         os.environ['MASTER_ADDR'] = os.environ.get('MASTER_ADDR', 'localhost')
         os.environ['MASTER_PORT'] = os.environ.get('MASTER_PORT', '29500')
 
@@ -35,9 +36,48 @@ class DDPRuntime(BaseRuntime):
         )
 
 
+def _prepare_trainer_ddp(trainer):
+    """Post-process trainer modules for DDP: wrap model, rebuild dataloaders
+    with DistributedSampler."""
+    ctx = trainer.ctx
+    args = trainer.args
+
+    # --- wrap model in DDP ---
+    trainer.MODEL = DDP(trainer.MODEL, device_ids=[ctx.device])
+
+    # --- rebuild train dataloader with DistributedSampler ---
+    train_sampler = DistributedSampler(
+        trainer.TrainDataloader.dataset,
+        num_replicas=ctx.world_size,
+        rank=ctx.rank,
+    )
+    trainer.TrainDataloader = DataLoader(
+        trainer.TrainDataloader.dataset,
+        batch_size=args.batch_size_per_worker,
+        shuffle=False,
+        sampler=train_sampler,
+        num_workers=args.workers,
+    )
+
+    # --- rebuild val dataloader if exists ---
+    if hasattr(trainer, 'ValDataloader'):
+        val_sampler = DistributedSampler(
+            trainer.ValDataloader.dataset,
+            num_replicas=ctx.world_size,
+            rank=ctx.rank,
+            shuffle=False,
+        )
+        trainer.ValDataloader = DataLoader(
+            trainer.ValDataloader.dataset,
+            batch_size=args.batch_size_per_worker,
+            shuffle=False,
+            sampler=val_sampler,
+            num_workers=args.workers,
+        )
+
+
 def _worker_fn(local_rank, world_size, trainer, args):
     """Entry point executed in each spawned process."""
-    # --- init process group ---
     dist.init_process_group(
         backend='nccl',
         rank=local_rank,
@@ -51,6 +91,7 @@ def _worker_fn(local_rank, world_size, trainer, args):
         world_size=world_size,
         is_main=(local_rank == 0),
         device=device,
+        prepare_trainer=_prepare_trainer_ddp,
     )
 
     try:

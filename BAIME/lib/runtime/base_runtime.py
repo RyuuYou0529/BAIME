@@ -1,16 +1,20 @@
 import torch
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
+from typing import Callable
 
 
 @dataclass
 class RuntimeContext:
-    """Injected into trainer by the runtime. Trainer uses this instead of
-    querying Ray / DDP internals directly."""
+    """Injected into trainer by the runtime. Trainer uses this for
+    rank-aware logging/saving — nothing more."""
     rank: int
     world_size: int
     is_main: bool
     device: torch.device
+    # Called by trainer after init_modules(); runtime uses this to
+    # post-process modules (e.g. wrap model in DDP, inject sampler).
+    prepare_trainer: Callable = field(default=lambda trainer: None)
 
 
 class BaseRuntime(ABC):
@@ -18,10 +22,4 @@ class BaseRuntime(ABC):
 
     @abstractmethod
     def launch(self, trainer, args):
-        """Launch the trainer on the configured device(s).
-
-        Args:
-            trainer: A trainer instance (e.g. BaseTrainer).
-            args: Parsed arguments namespace.
-        """
         raise NotImplementedError

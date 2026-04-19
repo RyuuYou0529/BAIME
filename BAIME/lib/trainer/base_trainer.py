@@ -1,8 +1,7 @@
 import sys
 import os
 import torch
-from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.utils.data import DataLoader, DistributedSampler
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 import glob
 
@@ -43,6 +42,8 @@ class BaseTrainer(object):
         CKPT = self.load_checkpoint()
         # === Initialize Modules === #
         self.init_modules(CKPT)
+        # === Let runtime post-process (e.g. DDP wrap, sampler injection) === #
+        self.ctx.prepare_trainer(self)
 
         # === Training Loop === #
         start_epoch = self.start_epoch
@@ -67,42 +68,28 @@ class BaseTrainer(object):
 
         # === Prepare Training DataLoader === #
         train_dataset = get_dataset(self.args, mode='train')
-        train_sampler = None
-        shuffle = self.args.shuffle
-        if self.ctx.world_size > 1:
-            train_sampler = DistributedSampler(train_dataset, num_replicas=self.ctx.world_size, rank=self.ctx.rank)
-            shuffle = False  # sampler handles shuffling
         self.TrainDataloader = DataLoader(
             train_dataset,
             batch_size=self.args.batch_size_per_worker,
-            shuffle=shuffle,
-            sampler=train_sampler,
+            shuffle=self.args.shuffle,
             num_workers=self.args.workers,
         )
 
         # === Prepare Validation DataLoader === #
         if self.args.val_data_path:
             val_dataset = get_dataset(self.args, mode='val')
-            val_sampler = None
-            if self.ctx.world_size > 1:
-                val_sampler = DistributedSampler(val_dataset, num_replicas=self.ctx.world_size, rank=self.ctx.rank, shuffle=False)
             self.ValDataloader = DataLoader(
                 val_dataset,
                 batch_size=self.args.batch_size_per_worker,
                 shuffle=False,
-                sampler=val_sampler,
                 num_workers=self.args.workers,
             )
 
         # === Prepare Model === #
         model = get_model(self.args)
         if CKPT and 'model' in CKPT:
-            model_state = CKPT['model']
-            model.load_state_dict(model_state)
-        model = model.to(self.ctx.device)
-        if self.ctx.world_size > 1:
-            model = DDP(model, device_ids=[self.ctx.device])
-        self.MODEL = model
+            model.load_state_dict(CKPT['model'])
+        self.MODEL = model.to(self.ctx.device)
 
         # === Prepare Loss === #
         self.LOSS = get_loss(self.args)
@@ -127,8 +114,8 @@ class BaseTrainer(object):
         return global_iter, local_iter
 
     def train_one_epoch(self, epoch):
-        # === Set epoch for distributed sampler === #
-        if self.ctx.world_size > 1:
+        # === Set epoch for distributed sampler (if injected by runtime) === #
+        if hasattr(self.TrainDataloader.sampler, 'set_epoch'):
             self.TrainDataloader.sampler.set_epoch(epoch)
         
         # === Training === #
