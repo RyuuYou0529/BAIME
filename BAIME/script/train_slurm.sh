@@ -1,15 +1,15 @@
 JOB_NAME=BAIME_SLURM
 CONFIG_NAME=BAIME.yaml
 SLURM_PARTITION=compute
-SLURM_NODE=c002
-NUM_CPUS=4
+SLURM_NODE=c001
+NUM_CPUS=8
 NUM_GPUS=2
 
 SCRIPT_DIR=$(dirname $(realpath $0))
 WORKSPACE=$(realpath $SCRIPT_DIR/../)
 export PYTHONPATH=$WORKSPACE
 CONFIG_PATH=$WORKSPACE/config/$CONFIG_NAME
-COMMAND="python -m lib.train -cfg $CONFIG_PATH -slurm"
+COMMAND="python -m lib.train --cfg $CONFIG_PATH --slurm"
 
 python -m lib.utils.slurm.slurm_launch \
        --job-name $JOB_NAME \

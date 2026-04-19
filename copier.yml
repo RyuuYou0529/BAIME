@@ -42,3 +42,4 @@ _exclude:
   - ".DS_Store"
   - "_test_*"
   - "copier.yaml"
+  - "BAIME/__init__.py"

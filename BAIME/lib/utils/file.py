@@ -8,7 +8,7 @@ def read_cfg(args):
     if args.cfg:
         with open(args.cfg, 'r') as f:
             yml = yaml.safe_load(f)
-        cmd = [c[1:] for c in sys.argv if c[0] == '-']
+        cmd = [c.lstrip('-') for c in sys.argv if c.startswith('-')]
         for k, v in yml.items():
             if k not in cmd:
                 args.__dict__[k] = v

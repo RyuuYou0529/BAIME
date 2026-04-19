@@ -1,7 +1,7 @@
 # === GENERAL ===
 model: BAIME_Example
 reset: true
-out_path: /home/ryuuyou/E5/project/BAIME/out
+out_path: out/
 
 # === RUNTIME ===
 runtime: standalone

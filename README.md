@@ -116,19 +116,19 @@ copier copy --trust https://github.com/RyuuYou0529/BAIME ${your_project_workspac
 Single GPU (debuggable — set breakpoints in your IDE):
 
 ```bash
-python -m lib.train -cfg config/BAIME.yaml
+python -m lib.train --cfg config/BAIME.yaml
 ```
 
 This defaults to `standalone` runtime on device `0`. Override via CLI:
 
 ```bash
-python -m lib.train -cfg config/BAIME.yaml -runtime standalone -devices 0
+python -m lib.train --cfg config/BAIME.yaml --runtime standalone --devices 0
 ```
 
 Multi-GPU DDP:
 
 ```bash
-python -m lib.train -cfg config/BAIME.yaml -runtime ddp -devices 0,1,2,3
+python -m lib.train --cfg config/BAIME.yaml --runtime ddp --devices 0,1,2,3
 ```
 
 Or set it in the YAML:
