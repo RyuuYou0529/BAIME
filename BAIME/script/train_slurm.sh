@@ -9,7 +9,7 @@ SCRIPT_DIR=$(dirname $(realpath $0))
 WORKSPACE=$(realpath $SCRIPT_DIR/../)
 export PYTHONPATH=$WORKSPACE
 CONFIG_PATH=$WORKSPACE/config/$CONFIG_NAME
-COMMAND="python -m lib.train --cfg $CONFIG_PATH --slurm"
+COMMAND="python -m lib.train --cfg $CONFIG_PATH --slurm --runtime ddp"
 
 python -m lib.utils.slurm.slurm_launch \
        --job-name $JOB_NAME \

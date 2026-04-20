@@ -13,12 +13,19 @@ from ..core.register import RUNTIME_REGISTER
 class DDPRuntime(BaseRuntime):
     """Multi-GPU runtime using native PyTorch DistributedDataParallel.
 
-    Spawns one process per GPU via ``mp.spawn``. Each process initialises
-    ``torch.distributed``, and the trainer receives a ``RuntimeContext``
-    with the correct rank / world_size / device.
+    Two modes:
+    - Local: spawns processes via ``mp.spawn`` (default).
+    - Slurm: detected automatically via SLURM_PROCID — each srun task
+      is already a separate process, so we just init the process group.
     """
 
     def launch(self, trainer, args):
+        if 'SLURM_PROCID' in os.environ:
+            self._launch_slurm(trainer, args)
+        else:
+            self._launch_local(trainer, args)
+
+    def _launch_local(self, trainer, args):
         devices = args.devices
         if not isinstance(devices, list):
             devices = list(range(devices))
@@ -35,6 +42,18 @@ class DDPRuntime(BaseRuntime):
             join=True,
         )
 
+    def _launch_slurm(self, trainer, args):
+        """Slurm already spawned one process per GPU via srun."""
+        local_rank = int(os.environ['LOCAL_RANK'])
+        global_rank = int(os.environ['SLURM_PROCID'])
+        world_size = int(os.environ['SLURM_NTASKS'])
+
+        os.environ.setdefault('MASTER_ADDR',
+            os.environ.get('SLURM_LAUNCH_NODE_IPADDR', 'localhost'))
+        os.environ.setdefault('MASTER_PORT', '29500')
+
+        _worker_fn(local_rank, world_size, trainer, args, global_rank=global_rank)
+
 
 def _prepare_trainer_ddp(trainer):
     """Post-process trainer modules for DDP: wrap model, rebuild dataloaders
@@ -42,10 +61,8 @@ def _prepare_trainer_ddp(trainer):
     ctx = trainer.ctx
     args = trainer.args
 
-    # --- wrap model in DDP ---
     trainer.MODEL = DDP(trainer.MODEL, device_ids=[ctx.device])
 
-    # --- rebuild train dataloader with DistributedSampler ---
     train_sampler = DistributedSampler(
         trainer.TrainDataloader.dataset,
         num_replicas=ctx.world_size,
@@ -59,7 +76,6 @@ def _prepare_trainer_ddp(trainer):
         num_workers=args.workers,
     )
 
-    # --- rebuild val dataloader if exists ---
     if hasattr(trainer, 'ValDataloader'):
         val_sampler = DistributedSampler(
             trainer.ValDataloader.dataset,
@@ -76,20 +92,23 @@ def _prepare_trainer_ddp(trainer):
         )
 
 
-def _worker_fn(local_rank, world_size, trainer, args):
-    """Entry point executed in each spawned process."""
+def _worker_fn(local_rank, world_size, trainer, args, global_rank=None):
+    """Entry point for each DDP process (spawned or srun-launched)."""
+    if global_rank is None:
+        global_rank = local_rank
+
     dist.init_process_group(
         backend='nccl',
-        rank=local_rank,
+        rank=global_rank,
         world_size=world_size,
     )
     torch.cuda.set_device(local_rank)
     device = torch.device(f'cuda:{local_rank}')
 
     ctx = RuntimeContext(
-        rank=local_rank,
+        rank=global_rank,
         world_size=world_size,
-        is_main=(local_rank == 0),
+        is_main=(global_rank == 0),
         device=device,
         prepare_trainer=_prepare_trainer_ddp,
     )

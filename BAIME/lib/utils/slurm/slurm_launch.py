@@ -1,7 +1,10 @@
-# slurm-launch.py
+# slurm_launch.py
+# Generates an sbatch script from slurm_template.sh and submits it.
 # Usage:
-# python slurm-launch.py --exp-name test \
-#     --command "rllib train --run PPO --env CartPole-v0"
+# python -m lib.utils.slurm.slurm_launch \
+#     --job-name my_exp \
+#     --command "python -m lib.train --cfg config/BAIME.yaml --slurm" \
+#     --config config/BAIME.yaml
 
 import argparse
 import subprocess
