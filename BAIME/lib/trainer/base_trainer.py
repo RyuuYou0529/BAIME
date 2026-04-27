@@ -53,12 +53,12 @@ class BaseTrainer(object):
             avg_train_loss = self.train_one_epoch(epoch)
 
             # === Validate one Epoch === #
-            self.val_one_epoch(epoch)
+            avg_val_loss = self.val_one_epoch(epoch)
 
             # === Report Metrics and Checkpoints === #
             self.save_checkpoint(
                 epoch, 
-                metrics={'epoch': epoch+1, 'loss': avg_train_loss}
+                metrics={'epoch': epoch+1, 'loss': avg_train_loss, 'val_loss': avg_val_loss}
             )
     
     def init_modules(self, CKPT=None):
@@ -105,6 +105,7 @@ class BaseTrainer(object):
 
         # === Set Start Epoch === #
         self.start_epoch = CKPT.get('epoch', 0) if CKPT else 0
+        self.best_val_loss = CKPT.get('best_val_loss', None) if CKPT else None
     
     def cal_global_iter(self, epoch, batch_idx):
         num_workers = self.ctx.world_size
@@ -191,15 +192,9 @@ class BaseTrainer(object):
             print('Reset is True. Training from scratch.')
             return None
         ckpt_dir = self.args.out_ckpt_path
-        sub_ckpt_dirs = [
-            os.path.join(ckpt_dir, d) for d in os.listdir(ckpt_dir) 
-            if os.path.isdir(os.path.join(ckpt_dir, d)) and d.startswith('Epoch_')
-        ]
-        latest_ckpt_dir = sorted(sub_ckpt_dirs)[-1] if sub_ckpt_dirs else None
-        if latest_ckpt_dir:
-            file_in_dir = glob.glob(os.path.join(latest_ckpt_dir, f'{self.args.model}_Epoch*.pt'))
-            file_in_dir = sorted(file_in_dir) if file_in_dir else None
-            latest_ckpt_path = file_in_dir[-1] if file_in_dir else None
+        ckpt_files = sorted(glob.glob(os.path.join(ckpt_dir, f'{self.args.model}_Epoch*.pt')))
+        latest_ckpt_path = ckpt_files[-1] if ckpt_files else None
+        if latest_ckpt_path:
             if latest_ckpt_path and os.path.isfile(latest_ckpt_path):
                 print(f'Loading checkpoint from {latest_ckpt_path} ...')
                 CKPT = torch.load(latest_ckpt_path, map_location='cpu', weights_only=False)
@@ -212,16 +207,27 @@ class BaseTrainer(object):
             return None
             
     def save_checkpoint(self, epoch, metrics):
-        if (epoch+1)%self.args.save_every == 0 or (epoch+1) == self.args.epochs:
-            if self.ctx.is_main:
-                ckpt_dir = os.path.join(self.args.out_ckpt_path, f'Epoch_{str(epoch+1).zfill(4)}/')
-                checkdir(ckpt_dir, reset=False)
-                ckpt_path = os.path.join(ckpt_dir, f'{self.args.model}_Epoch{str(epoch+1).zfill(4)}.pt')
-                model_state = {k.replace('module.', ''): v for k, v in self.MODEL.state_dict().items()}
-                CKPT = {
-                    "epoch": epoch+1,
-                    "model": model_state,
-                    "optimizer": self.Optimizer.state_dict(),
-                    "args": self.args
-                }
-                torch.save(CKPT, ckpt_path)
+        if not self.ctx.is_main:
+            return
+        val_loss = metrics.get('val_loss')
+        is_best = val_loss is not None and (self.best_val_loss is None or val_loss < self.best_val_loss)
+        save_epoch = (epoch+1)%self.args.save_every == 0 or (epoch+1) == self.args.epochs
+        if not is_best and not save_epoch:
+            return
+
+        if is_best:
+            self.best_val_loss = val_loss
+        ckpt_dir = self.args.out_ckpt_path
+        checkdir(ckpt_dir, reset=False)
+        model_state = {k.replace('module.', ''): v for k, v in self.MODEL.state_dict().items()}
+        CKPT = {
+            "epoch": epoch+1,
+            "model": model_state,
+            "optimizer": self.Optimizer.state_dict(),
+            "args": self.args,
+            "best_val_loss": self.best_val_loss
+        }
+        if is_best:
+            torch.save(CKPT, os.path.join(ckpt_dir, f'{self.args.model}_BestValCKPT.pt'))
+        if save_epoch:
+            torch.save(CKPT, os.path.join(ckpt_dir, f'{self.args.model}_Epoch{str(epoch+1).zfill(4)}.pt'))
