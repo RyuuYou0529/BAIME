@@ -1,4 +1,6 @@
 import os
+import random
+import socket
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
@@ -32,8 +34,9 @@ class DDPRuntime(BaseRuntime):
         world_size = len(devices)
 
         os.environ['CUDA_VISIBLE_DEVICES'] = ','.join(str(d) for d in devices)
-        os.environ['MASTER_ADDR'] = os.environ.get('MASTER_ADDR', 'localhost')
-        os.environ['MASTER_PORT'] = os.environ.get('MASTER_PORT', '29500')
+        os.environ.setdefault('MASTER_ADDR', 'localhost')
+        if 'MASTER_PORT' not in os.environ:
+            os.environ['MASTER_PORT'] = _find_free_port()
 
         mp.spawn(
             _worker_fn,
@@ -50,9 +53,29 @@ class DDPRuntime(BaseRuntime):
 
         os.environ.setdefault('MASTER_ADDR',
             os.environ.get('SLURM_LAUNCH_NODE_IPADDR', 'localhost'))
-        os.environ.setdefault('MASTER_PORT', '29500')
+        if 'MASTER_PORT' not in os.environ:
+            os.environ['MASTER_PORT'] = _slurm_master_port()
 
         _worker_fn(local_rank, world_size, trainer, args, global_rank=global_rank)
+
+
+def _find_free_port(low=20000, high=29999, tries=100):
+    for _ in range(tries):
+        port = random.randint(low, high)
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            try:
+                sock.bind(('', port))
+            except OSError:
+                continue
+            return str(port)
+    raise RuntimeError(f'Could not find a free DDP port in {low}-{high}')
+
+
+def _slurm_master_port():
+    job_id = os.environ.get('SLURM_JOB_ID') or os.environ.get('SLURM_JOBID')
+    if job_id and job_id.isdigit():
+        return str(20000 + int(job_id) % 10000)
+    return '29500'
 
 
 def _prepare_trainer_ddp(trainer):

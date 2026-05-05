@@ -18,7 +18,7 @@ ${GIVEN_NODE}
 ${LOAD_ENV}
 
 # ===== DDP Environment Setup =====
-export MASTER_PORT=$(expr 10000 + $(echo -n $SLURM_JOBID | tail -c 4))
+export MASTER_PORT=$(expr 20000 + $(echo -n $SLURM_JOBID | tail -c 4))
 export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 
 echo "MASTER_ADDR=$MASTER_ADDR"
